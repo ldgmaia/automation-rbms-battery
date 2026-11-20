@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { OperationResult, Printer, ReportResult } from '../../shared/types'
+import type { BatteryPresence, OperationResult, Printer, ReportResult } from '../../shared/types'
 
 type Step = 'login' | 'ready' | 'serial' | 'print'
 
@@ -12,6 +12,37 @@ function App() {
   const [batteryHealth, setBatteryHealth] = useState<number | null>(null)
   const [printer, setPrinter] = useState<Printer>('default')
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+  const [presence, setPresence] = useState<BatteryPresence | null>(null)
+
+  useEffect(() => {
+    if (step !== 'ready') return
+
+    let active = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    setPresence(null)
+
+    async function refresh() {
+      try {
+        const result = await window.rbms.batteryPresence()
+        if (active) setPresence(result)
+      } catch (error) {
+        if (active) {
+          setPresence({
+            ok: false,
+            error: error instanceof Error ? error.message : 'Battery detection failed.',
+          })
+        }
+      } finally {
+        if (active) timer = setTimeout(refresh, 3000)
+      }
+    }
+
+    void refresh()
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [step])
 
   useEffect(() => {
     if (step !== 'ready' || busy) return
@@ -179,6 +210,34 @@ function App() {
                 The report will not be uploaded until you enter the battery
                 serial number.
               </p>
+              <div
+                className={`battery-presence ${
+                  presence === null ? 'checking' : !presence.ok ? 'unknown' : presence.count ? 'detected' : 'absent'
+                }`}
+                role="status"
+              >
+                <span className="presence-dot" aria-hidden="true" />
+                <div>
+                  <strong>
+                    {presence === null
+                      ? 'Checking for batteries…'
+                      : !presence.ok
+                        ? 'Battery detection unavailable'
+                        : presence.count === 0
+                          ? 'No battery detected'
+                          : `${presence.count} ${presence.count === 1 ? 'battery' : 'batteries'} detected`}
+                  </strong>
+                  <p>
+                    {presence === null
+                      ? 'Waiting for the operating system.'
+                      : !presence.ok
+                        ? `${presence.error} You can still try generating a report.`
+                        : presence.count === 0
+                          ? 'Insert the battery and wait for detection.'
+                          : 'This includes internal batteries and does not identify the battery being tested.'}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 className="primary-button"

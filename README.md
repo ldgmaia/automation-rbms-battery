@@ -21,6 +21,8 @@ Printing sends ZPL over HTTP to the selected printer (`192.168.50.140` by defaul
 
 Battery health is rounded from full-charge capacity divided by design capacity, matching the calculation performed by RBMS.
 
+The first step refreshes the operating system's detected battery count approximately every three seconds. On Windows this uses `Win32_Battery`; on Linux it reads the `type` and `present` values under `/sys/class/power_supply`. Detection may include internal batteries and does not identify the battery being tested or guarantee which battery the report describes. If detection is unavailable, the app shows the error but still allows report generation.
+
 ## Development
 
 Requires Node.js and pnpm.

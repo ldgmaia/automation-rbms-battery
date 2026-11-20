@@ -8,6 +8,7 @@ const rbms: RbmsBridge = {
   uploadReport: (serialNumber) =>
     ipcRenderer.invoke('rbms:upload-report', serialNumber),
   printLabel: (printer) => ipcRenderer.invoke('rbms:print-label', printer),
+  batteryPresence: () => ipcRenderer.invoke('rbms:battery-presence'),
 }
 
 contextBridge.exposeInMainWorld('rbms', rbms)

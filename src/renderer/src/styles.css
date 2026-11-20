@@ -255,6 +255,47 @@ input::placeholder {
   letter-spacing: -0.04em;
 }
 
+.battery-presence {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 13px 15px;
+  border: 1px solid #d5e0e6;
+  border-radius: 9px;
+  background: #f7fafb;
+  color: #435b69;
+  font-size: 13px;
+}
+
+.battery-presence.detected {
+  border-color: #b7dfca;
+  background: #effaf4;
+  color: #205b3b;
+}
+
+.battery-presence.absent,
+.battery-presence.unknown {
+  border-color: #eddcb9;
+  background: #fffaf0;
+  color: #80591f;
+}
+
+.presence-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.battery-presence p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .warning {
   margin: 10px 0 0;
   color: #965516;

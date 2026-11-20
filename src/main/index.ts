@@ -7,9 +7,11 @@ import { promisify } from 'node:util'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { calculateBatteryHealth, parseBatteryReport } from './battery-report'
 import { sendBatteryLabel } from './battery-label'
+import { detectBatteryCount } from './battery-presence'
 import { createLinuxBatteryReport } from './linux-battery'
 import type {
   OperationResult,
+  BatteryPresence,
   Printer,
   ReportResult,
 } from '../shared/types'
@@ -43,6 +45,14 @@ function createWindow(): void {
     void window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+ipcMain.handle('rbms:battery-presence', async (): Promise<BatteryPresence> => {
+  try {
+    return { ok: true, count: await detectBatteryCount() }
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) }
+  }
+})
 
 ipcMain.handle(
   'rbms:login',
