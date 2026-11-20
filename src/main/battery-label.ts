@@ -1,3 +1,4 @@
+import { request } from 'node:http'
 import type { Printer } from '../shared/types'
 
 export interface BatteryLabel {
@@ -5,6 +6,13 @@ export interface BatteryLabel {
   serialNumber: string
   health: number
   description: string
+}
+
+export const testBatteryLabel: BatteryLabel = {
+  partNumber: 'TEST',
+  serialNumber: 'TEST-PRINT',
+  health: 85,
+  description: 'TEST LABEL - NOT INVENTORY',
 }
 
 const printers: Record<Printer, string> = {
@@ -50,15 +58,33 @@ export async function sendBatteryLabel(
 ): Promise<void> {
   const url = printers[printer]
   if (!url) throw new Error('Select a valid printer.')
+  await sendPrinterRequest(url, buildBatteryZpl(label))
+}
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: buildBatteryZpl(label),
-    signal: AbortSignal.timeout(15000),
-    redirect: 'error',
+export async function sendPrinterRequest(url: string, body: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const req = request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+        'Content-Length': Buffer.byteLength(body, 'utf8'),
+      },
+      signal: AbortSignal.timeout(15000),
+    }, (response) => {
+      response.resume()
+      response.on('error', reject)
+      response.on('aborted', () => reject(new Error('Printer response was interrupted.')))
+      response.on('end', () => {
+        if (response.statusCode !== undefined && response.statusCode >= 200 && response.statusCode < 300) {
+          resolve()
+        } else {
+          reject(new Error(`Printer at ${url} returned HTTP ${response.statusCode ?? 'unknown'}. Check the printer before retrying.`))
+        }
+      })
+    })
+    req.on('error', (error) => {
+      reject(new Error(`Could not send the label to ${url}: ${error.message}. The label may still have printed; check the printer before retrying.`))
+    })
+    req.end(body, 'utf8')
   })
-  if (!response.ok) {
-    throw new Error(`Printer request failed (HTTP ${response.status}).`)
-  }
 }

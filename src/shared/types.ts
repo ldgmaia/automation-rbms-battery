@@ -17,5 +17,6 @@ export interface RbmsBridge {
   generateReport(): Promise<ReportResult>
   uploadReport(serialNumber: string): Promise<OperationResult>
   printLabel(printer: Printer): Promise<OperationResult>
+  printTestLabel(printer: Printer): Promise<OperationResult>
   batteryPresence(): Promise<BatteryPresence>
 }

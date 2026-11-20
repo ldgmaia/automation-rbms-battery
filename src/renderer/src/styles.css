@@ -38,6 +38,23 @@ select {
   margin: 0 0 30px 4px;
 }
 
+.settings-button {
+  margin-left: auto;
+  padding: 8px 12px;
+  border: 1px solid #cad6dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #334955;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .brand-mark {
   width: 48px;
   height: 48px;

@@ -14,6 +14,8 @@ Electron desktop app for generating battery reports and uploading them to RBMS.
 The authentication token is held in memory only. Closing the app ends the session.
 Printing sends ZPL over HTTP to the selected printer (`192.168.50.140` by default, or `192.168.51.111` for the backup). The app must be able to reach the printer on the network. A successful response means the printer accepted the request; it does not verify that a label physically printed.
 
+Use **Settings > Printer test** to send a sample label to either printer without logging in or uploading a report. It uses the same label template and printer request as a battery label. If the request fails or times out, check the printer before retrying: the label may still have printed. The selected printer is shared with the upload workflow for the current app session.
+
 ## Battery data by platform
 
 - **Windows:** generates the report with `powercfg /batteryreport`.

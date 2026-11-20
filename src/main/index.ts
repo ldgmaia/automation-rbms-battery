@@ -6,7 +6,7 @@ import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { calculateBatteryHealth, parseBatteryReport } from './battery-report'
-import { sendBatteryLabel } from './battery-label'
+import { sendBatteryLabel, testBatteryLabel } from './battery-label'
 import { detectBatteryCount } from './battery-presence'
 import { createLinuxBatteryReport } from './linux-battery'
 import type {
@@ -180,14 +180,19 @@ ipcMain.handle(
       }
 
       const { serialNumber, health } = uploadedBattery
-      const response = await fetch(`${API_BASE_URL}/inventory_items/showBySerialNumber`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ serial_number: serialNumber }),
-      })
+      let response: Response
+      try {
+        response = await fetch(`${API_BASE_URL}/inventory_items/showBySerialNumber`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ serial_number: serialNumber }),
+        })
+      } catch (error) {
+        throw new Error(`Could not retrieve battery details from RBMS: ${errorMessage(error)}`)
+      }
       const body = await readResponseBody(response)
       if (!response.ok) throw new Error(responseError(body, response.status))
       if (isRecord(body) && typeof body.error === 'string') throw new Error(body.error)
@@ -210,6 +215,24 @@ ipcMain.handle(
         description: body.description ?? '',
       })
       return { ok: true, message: 'Label sent to the printer.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  },
+)
+
+ipcMain.handle(
+  'rbms:print-test-label',
+  async (_event, printer: Printer): Promise<OperationResult> => {
+    try {
+      if (printer !== 'default' && printer !== 'backup') {
+        throw new Error('Select a valid printer.')
+      }
+      await sendBatteryLabel(printer, testBatteryLabel)
+      return {
+        ok: true,
+        message: 'Printer accepted the test request. Check the printer for the test label.',
+      }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
     }

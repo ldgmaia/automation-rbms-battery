@@ -13,9 +13,11 @@ function App() {
   const [printer, setPrinter] = useState<Printer>('default')
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const [presence, setPresence] = useState<BatteryPresence | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsNotice, setSettingsNotice] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
-    if (step !== 'ready') return
+    if (step !== 'ready' || settingsOpen) return
 
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -42,12 +44,16 @@ function App() {
       active = false
       clearTimeout(timer)
     }
-  }, [step])
+  }, [step, settingsOpen])
 
   useEffect(() => {
-    if (step !== 'ready' || busy) return
+    if (step !== 'ready' || busy || settingsOpen) return
 
     const handleEnter = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest('button, input, select, textarea, a, [contenteditable="true"]')
+      ) return
       if (event.key === 'Enter' && !event.repeat) {
         event.preventDefault()
         void generateReport()
@@ -56,7 +62,7 @@ function App() {
 
     window.addEventListener('keydown', handleEnter)
     return () => window.removeEventListener('keydown', handleEnter)
-  }, [step, busy])
+  }, [step, busy, settingsOpen])
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -135,6 +141,30 @@ function App() {
     setStep('ready')
   }
 
+  async function handleTestPrint(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setSettingsNotice(null)
+    try {
+      const result = await window.rbms.printTestLabel(printer)
+      setSettingsNotice(
+        result.ok
+          ? { ok: true, text: result.message ?? 'Printer accepted the test request. Check the printer for the test label.' }
+          : { ok: false, text: result.error },
+      )
+    } catch (error) {
+      setSettingsNotice({
+        ok: false,
+        text: error instanceof Error ? error.message : 'Test printing failed.',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const visibleNotice = settingsOpen ? settingsNotice : notice
+
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -143,9 +173,48 @@ function App() {
           <p className="eyebrow">Rugged Books Management System</p>
           <h1>Battery Reporter</h1>
         </div>
+        <button
+          type="button"
+          className="settings-button"
+          disabled={busy}
+          onClick={() => {
+            setSettingsOpen(!settingsOpen)
+            setSettingsNotice(null)
+          }}
+        >
+          {settingsOpen ? 'Back' : 'Settings'}
+        </button>
       </header>
 
-      {step === 'login' ? (
+      {settingsOpen ? (
+        <section className="card login-card">
+          <div className="step-label">Settings</div>
+          <h2>Printer test</h2>
+          <p className="muted">
+            Print a clearly marked sample battery label without logging in or uploading a report.
+            The printer selected here is also used for the next battery label.
+          </p>
+          <form onSubmit={handleTestPrint} className="form-stack">
+            <label>
+              Printer
+              <select
+                value={printer}
+                onChange={(event) => {
+                  const value = event.target.value
+                  if (value === 'default' || value === 'backup') setPrinter(value)
+                }}
+                disabled={busy}
+              >
+                <option value="default">Default printer (192.168.50.140)</option>
+                <option value="backup">Backup printer (192.168.51.111)</option>
+              </select>
+            </label>
+            <button type="submit" className="primary-button" disabled={busy}>
+              {busy ? 'Sending test label…' : 'Print test label'}
+            </button>
+          </form>
+        </section>
+      ) : step === 'login' ? (
         <section className="card login-card">
           <div className="step-label">Sign in</div>
           <h2>Log in to RBMS</h2>
@@ -320,15 +389,15 @@ function App() {
         </section>
       )}
 
-      {notice && (
+      {visibleNotice && (
         <div
-          className={`notice ${notice.ok ? 'success' : 'error'}`}
-          role={notice.ok ? 'status' : 'alert'}
+          className={`notice ${visibleNotice.ok ? 'success' : 'error'}`}
+          role={visibleNotice.ok ? 'status' : 'alert'}
         >
           <span className="notice-icon" aria-hidden="true">
-            {notice.ok ? '✓' : '!'}
+            {visibleNotice.ok ? '✓' : '!'}
           </span>
-          <span>{notice.text}</span>
+          <span>{visibleNotice.text}</span>
         </div>
       )}
 
