@@ -1,0 +1,1 @@
+pwsh .\battery_script.ps1
