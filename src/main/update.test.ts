@@ -4,8 +4,9 @@ import { copyFile, mkdtemp, readFile, readdir, rmdir, unlink, writeFile } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { downloadUpdate, getLatestRelease, isNewerVersion, replacementScript } from './update'
+import { downloadUpdate, getLatestRelease, isNewerVersion } from './update'
 
 const payload = Buffer.from('new executable')
 const digest = createHash('sha256').update(payload).digest('hex')
@@ -22,7 +23,20 @@ async function temporaryDirectory(): Promise<string> {
 afterEach(async () => {
   vi.unstubAllGlobals()
   for (const directory of directories.splice(0)) {
-    for (const file of await readdir(directory)) await unlink(join(directory, file))
+    for (const file of await readdir(directory)) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await unlink(join(directory, file))
+          break
+        } catch (error) {
+          if (
+            attempt >= 50 || typeof error !== 'object' || error === null ||
+            !('code' in error) || (error.code !== 'EPERM' && error.code !== 'EBUSY')
+          ) throw error
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+      }
+    }
     await rmdir(directory)
   }
 })
@@ -76,18 +90,32 @@ describe('portable updates', () => {
     expect(await readdir(directory)).toEqual([])
   })
 
-  it.runIf(process.platform === 'win32')('replaces the portable file after the app exits', async () => {
+  it.runIf(process.platform === 'win32')('starts the helper and replaces the file after its parent exits', async () => {
     const directory = await temporaryDirectory()
     const target = join(directory, "app's original.exe")
     const staged = join(directory, 'download.exe')
+    const modulePath = join(directory, 'updater.cjs')
+    const launcher = join(directory, 'launcher.cjs')
     await writeFile(target, 'old executable')
     await copyFile(join(process.env.SystemRoot!, 'System32', 'where.exe'), staged)
     const newExecutable = await readFile(staged)
-    const script = replacementScript(target, staged, 2147483647)
-    await promisify(execFile)('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64'),
-    ], { timeout: 15000, windowsHide: true })
-    expect(await readFile(target)).toEqual(newExecutable)
-    expect(await readdir(directory)).toEqual(["app's original.exe"])
-  }, 20000)
+    const source = await readFile(join(process.cwd(), 'src', 'main', 'update.ts'), 'utf8')
+    await writeFile(modulePath, ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+    }).outputText)
+    await writeFile(launcher, `
+      require('./updater.cjs').launchReplacement(process.argv[2], process.argv[3])
+        .catch((error) => { console.error(error); process.exitCode = 1 })
+    `)
+    await promisify(execFile)(process.execPath, [launcher, target, staged], { timeout: 20000, windowsHide: true })
+    let files: string[] = []
+    for (let i = 0; i < 100; i++) {
+      files = await readdir(directory)
+      if (!files.includes('download.exe') && !files.some((file) => file.startsWith('.rbms-backup-'))) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    expect(createHash('sha256').update(await readFile(target)).digest('hex'))
+      .toBe(createHash('sha256').update(newExecutable).digest('hex'))
+    expect(files.sort()).toEqual(["app's original.exe", 'launcher.cjs', 'updater.cjs'])
+  }, 30000)
 })

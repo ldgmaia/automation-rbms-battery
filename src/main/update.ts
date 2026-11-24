@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { open, unlink } from 'node:fs/promises'
+import { access, open, unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const REPOSITORY = 'ldgmaia/automation-rbms-battery'
@@ -105,14 +106,25 @@ function quotePowerShell(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
-export function replacementScript(target: string, staged: string, pid: number): string {
+function replacementScript(target: string, staged: string, pid: number, ready: string, proceed: string): string {
   const backup = join(dirname(target), `.rbms-backup-${randomUUID()}.exe`)
   return `
 $ErrorActionPreference = 'Stop'
 $target = ${quotePowerShell(target)}
 $staged = ${quotePowerShell(staged)}
 $backup = ${quotePowerShell(backup)}
+$ready = ${quotePowerShell(ready)}
+$proceed = ${quotePowerShell(proceed)}
 try {
+  [System.IO.File]::WriteAllText($ready, 'ready')
+  $confirmed = $false
+  for ($i = 0; $i -lt 300; $i++) {
+    if (Test-Path -LiteralPath $proceed) { $confirmed = $true; break }
+    Start-Sleep -Milliseconds 100
+  }
+  Remove-Item -LiteralPath $ready -ErrorAction Stop
+  if (-not $confirmed) { exit 1 }
+  Remove-Item -LiteralPath $proceed -ErrorAction Stop
   Wait-Process -Id ${pid} -ErrorAction SilentlyContinue
   $moved = $false
   for ($i = 0; $i -lt 60; $i++) {
@@ -137,16 +149,55 @@ try {
 }
 
 export async function launchReplacement(target: string, staged: string): Promise<void> {
-  const script = replacementScript(target, staged, process.pid)
+  const marker = join(tmpdir(), `rbms-updater-${randomUUID()}`)
+  const ready = `${marker}.ready`
+  const proceed = `${marker}.proceed`
+  const script = replacementScript(target, staged, process.pid, ready, proceed)
   const encoded = Buffer.from(script, 'utf16le').toString('base64')
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+  // PowerShell exits immediately when directly spawned as a detached Windows process.
+  const child = spawn('cmd.exe', ['/d', '/s', '/c', `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
   })
   await new Promise<void>((resolve, reject) => {
-    child.once('error', reject)
-    child.once('spawn', resolve)
+    let settled = false
+    let checking = false
+    const deadline = Date.now() + 15000
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      clearInterval(timer)
+      if (error) reject(error)
+      else {
+        child.unref()
+        resolve()
+      }
+    }
+    const timer = setInterval(async () => {
+      if (settled || checking) return
+      if (Date.now() >= deadline) {
+        finish(new Error('The update helper did not start in time.'))
+        return
+      }
+      checking = true
+      try {
+        try {
+          await access(ready)
+        } catch (error) {
+          if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') return
+          throw error
+        }
+        if (settled) return
+        await writeFile(proceed, 'go', { flag: 'wx' })
+        if (!settled) finish()
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)))
+      } finally {
+        checking = false
+      }
+    }, 100)
+    child.once('error', (error) => finish(error))
+    child.once('exit', (code) => finish(new Error(`The update helper exited before starting (code ${code}).`)))
   })
-  child.unref()
 }
