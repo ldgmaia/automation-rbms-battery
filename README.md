@@ -47,3 +47,9 @@ pnpm build:linux
 ```
 
 The Windows command creates a portable `.exe`; the Linux command creates an AppImage. Outputs are written to `release/`.
+
+## Releases and updates
+
+Every push to `main` or `master` runs the Windows release workflow. It tests and builds the pushed commit, assigns version `1.0.<workflow run number>` (numbers can have gaps), and publishes a GitHub release containing `RBMS-Battery-Reporter.exe`. The version is embedded in the build; the workflow does not commit a version bump. The repository must allow GitHub Actions to write contents and releases. A failed publishing run may leave a draft release that must be inspected before retrying.
+
+In the Windows portable app, use **Settings > App updates > Check for updates**. If a newer release is available, **Update now** downloads and verifies the release executable, then closes and restarts the app to replace the original file. The current RBMS session ends; complete any in-progress report first. The executable's directory must be writable and other copies using the same file must be closed. If replacement fails, an error identifies the original, backup, and downloaded files for recovery. Automatic installation is not supported in development, unpacked builds, or Linux AppImages. Releases are unsigned, so Windows may display security warnings.

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { BatteryPresence, OperationResult, Printer, ReportResult } from '../../shared/types'
+import type { BatteryPresence, OperationResult, Printer, ReportResult, UpdateCheckResult } from '../../shared/types'
 
 type Step = 'login' | 'ready' | 'serial' | 'print'
 
@@ -15,6 +15,8 @@ function App() {
   const [presence, setPresence] = useState<BatteryPresence | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsNotice, setSettingsNotice] = useState<{ ok: boolean; text: string } | null>(null)
+  const [update, setUpdate] = useState<Extract<UpdateCheckResult, { ok: true }> | null>(null)
+  const [updateAction, setUpdateAction] = useState<'checking' | 'installing' | null>(null)
 
   useEffect(() => {
     if (step !== 'ready' || settingsOpen) return
@@ -163,6 +165,40 @@ function App() {
     }
   }
 
+  async function checkForUpdate() {
+    if (busy) return
+    setBusy(true)
+    setUpdateAction('checking')
+    setUpdate(null)
+    setSettingsNotice(null)
+    try {
+      const result = await window.rbms.checkForUpdate()
+      if (result.ok) setUpdate(result)
+      else setSettingsNotice({ ok: false, text: result.error })
+    } catch (error) {
+      setSettingsNotice({ ok: false, text: error instanceof Error ? error.message : 'Update check failed.' })
+    } finally {
+      setBusy(false)
+      setUpdateAction(null)
+    }
+  }
+
+  async function installUpdate() {
+    if (busy) return
+    setBusy(true)
+    setUpdateAction('installing')
+    setSettingsNotice(null)
+    try {
+      const result = await window.rbms.installUpdate()
+      if (!result.ok) setSettingsNotice({ ok: false, text: result.error })
+    } catch (error) {
+      setSettingsNotice({ ok: false, text: error instanceof Error ? error.message : 'Update failed.' })
+    } finally {
+      setBusy(false)
+      setUpdateAction(null)
+    }
+  }
+
   const visibleNotice = settingsOpen ? settingsNotice : notice
 
   return (
@@ -210,9 +246,34 @@ function App() {
               </select>
             </label>
             <button type="submit" className="primary-button" disabled={busy}>
-              {busy ? 'Sending test label…' : 'Print test label'}
+              {busy && !updateAction ? 'Sending test label…' : 'Print test label'}
             </button>
           </form>
+          <div className="settings-section">
+            <h2>App updates</h2>
+            <p className="muted">Check GitHub for a newer Windows portable release.</p>
+            <button type="button" className="secondary-button update-button" onClick={() => void checkForUpdate()} disabled={busy}>
+              {updateAction === 'checking' ? 'Checking…' : 'Check for updates'}
+            </button>
+            {update && (
+              <div className="update-status" role="status">
+                <p>
+                  Current version: {update.currentVersion}.{' '}
+                  {update.available ? `Version ${update.latestVersion} is available.` : 'You are up to date.'}
+                </p>
+                {update.available && (update.canInstall ? (
+                  <>
+                    <p className="muted">Updating closes and restarts the app. Your current session will end.</p>
+                    <button type="button" className="primary-button" onClick={() => void installUpdate()} disabled={busy}>
+                      {updateAction === 'installing' ? 'Downloading update…' : 'Update now'}
+                    </button>
+                  </>
+                ) : (
+                  <p className="muted">Automatic installation is only available in the Windows portable executable.</p>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
       ) : step === 'login' ? (
         <section className="card login-card">

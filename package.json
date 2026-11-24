@@ -41,6 +41,7 @@
       "package.json"
     ],
     "win": {
+      "artifactName": "RBMS-Battery-Reporter.exe",
       "target": [
         "portable"
       ]

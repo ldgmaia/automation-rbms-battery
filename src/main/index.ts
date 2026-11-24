@@ -9,11 +9,13 @@ import { calculateBatteryHealth, parseBatteryReport } from './battery-report'
 import { sendBatteryLabel, testBatteryLabel } from './battery-label'
 import { detectBatteryCount } from './battery-presence'
 import { createLinuxBatteryReport } from './linux-battery'
+import { downloadUpdate, getLatestRelease, launchReplacement } from './update'
 import type {
   OperationResult,
   BatteryPresence,
   Printer,
   ReportResult,
+  UpdateCheckResult,
 } from '../shared/types'
 
 const API_BASE_URL = 'https://api.ruggedbooksms.com'
@@ -23,6 +25,13 @@ let authToken: string | null = null
 let currentReportPath: string | null = null
 let currentReportHealth: number | null = null
 let uploadedBattery: { serialNumber: string; health: number } | null = null
+let updating = false
+
+function portableExecutable(): string | null {
+  return process.platform === 'win32' && app.isPackaged
+    ? process.env.PORTABLE_EXECUTABLE_FILE || null
+    : null
+}
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -51,6 +60,51 @@ ipcMain.handle('rbms:battery-presence', async (): Promise<BatteryPresence> => {
     return { ok: true, count: await detectBatteryCount() }
   } catch (error) {
     return { ok: false, error: errorMessage(error) }
+  }
+})
+
+ipcMain.handle('rbms:check-update', async (): Promise<UpdateCheckResult> => {
+  try {
+    const currentVersion = app.getVersion()
+    const release = await getLatestRelease(currentVersion)
+    return {
+      ok: true,
+      currentVersion,
+      latestVersion: release.version,
+      available: release.update !== null,
+      canInstall: portableExecutable() !== null,
+    }
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) }
+  }
+})
+
+ipcMain.handle('rbms:install-update', async (): Promise<OperationResult> => {
+  if (updating) return { ok: false, error: 'An update is already in progress.' }
+  updating = true
+  let staged: string | null = null
+  try {
+    const target = portableExecutable()
+    if (!target) throw new Error('Automatic updates are only available in the Windows portable executable.')
+    const release = await getLatestRelease(app.getVersion())
+    if (!release.update) throw new Error('There is no newer release to install.')
+    staged = await downloadUpdate(release.update, target)
+    await launchReplacement(target, staged)
+    staged = null
+    app.quit()
+    return { ok: true }
+  } catch (error) {
+    let message = errorMessage(error)
+    if (staged) {
+      try {
+        await unlink(staged)
+      } catch (cleanupError) {
+        message += ` Download cleanup failed: ${errorMessage(cleanupError)}`
+      }
+    }
+    return { ok: false, error: message }
+  } finally {
+    updating = false
   }
 })
 

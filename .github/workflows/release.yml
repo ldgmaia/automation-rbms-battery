@@ -1,0 +1,62 @@
+name: Release Windows portable app
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release
+  queue: max
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Set release version
+        shell: pwsh
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version
+      - run: pnpm build:win
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: 1.0.${{ github.run_number }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          $tag = "v$env:VERSION"
+          gh release view $tag --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release $tag already exists. Inspect it before retrying."
+          }
+          gh release create $tag "release\RBMS-Battery-Reporter.exe" --target $env:COMMIT_SHA --title $tag --generate-notes --draft
+          if ($LASTEXITCODE -ne 0) { throw "Failed to create release $tag." }
+          $releases = gh release list --limit 1000 --json tagName,isLatest,isDraft,isPrerelease | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Failed to inspect existing releases; $tag remains a draft." }
+          $latest = @($releases | Where-Object { $_.isLatest })
+          if ($latest.Count -gt 1) { throw "Multiple latest releases found; $tag remains a draft." }
+          if ($latest.Count -eq 0 -and @($releases | Where-Object { -not $_.isDraft -and -not $_.isPrerelease }).Count -gt 0) {
+            throw "Could not determine the latest release; $tag remains a draft."
+          }
+          $makeLatest = $true
+          if ($latest.Count -eq 1) {
+            if ($latest[0].tagName -notmatch '^v(\d+)\.(\d+)\.(\d+)$') {
+              throw "The latest release has an unexpected version; $tag remains a draft."
+            }
+            $makeLatest = [version]$env:VERSION -gt [version]$latest[0].tagName.Substring(1)
+          }
+          gh release edit $tag --draft=false "--latest=$($makeLatest.ToString().ToLowerInvariant())"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to publish release $tag; inspect its draft before retrying." }

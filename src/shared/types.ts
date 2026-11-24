@@ -12,6 +12,10 @@ export type BatteryPresence =
   | { ok: true; count: number }
   | { ok: false; error: string }
 
+export type UpdateCheckResult =
+  | { ok: true; currentVersion: string; latestVersion: string; available: boolean; canInstall: boolean }
+  | { ok: false; error: string }
+
 export interface RbmsBridge {
   login(email: string, password: string): Promise<OperationResult>
   generateReport(): Promise<ReportResult>
@@ -19,4 +23,6 @@ export interface RbmsBridge {
   printLabel(printer: Printer): Promise<OperationResult>
   printTestLabel(printer: Printer): Promise<OperationResult>
   batteryPresence(): Promise<BatteryPresence>
+  checkForUpdate(): Promise<UpdateCheckResult>
+  installUpdate(): Promise<OperationResult>
 }

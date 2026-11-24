@@ -10,6 +10,8 @@ const rbms: RbmsBridge = {
   printLabel: (printer) => ipcRenderer.invoke('rbms:print-label', printer),
   printTestLabel: (printer) => ipcRenderer.invoke('rbms:print-test-label', printer),
   batteryPresence: () => ipcRenderer.invoke('rbms:battery-presence'),
+  checkForUpdate: () => ipcRenderer.invoke('rbms:check-update'),
+  installUpdate: () => ipcRenderer.invoke('rbms:install-update'),
 }
 
 contextBridge.exposeInMainWorld('rbms', rbms)

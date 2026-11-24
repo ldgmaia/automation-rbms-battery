@@ -180,6 +180,21 @@ h2 {
   margin-top: 24px;
 }
 
+.settings-section {
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 1px solid #e1e8ed;
+}
+
+.update-button {
+  padding: 0 18px;
+}
+
+.update-status {
+  margin-top: 18px;
+  font-size: 13px;
+}
+
 label {
   display: grid;
   gap: 8px;
