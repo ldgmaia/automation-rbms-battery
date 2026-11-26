@@ -8,7 +8,7 @@ Electron desktop app for generating battery reports and uploading them to RBMS.
 2. Insert the battery and press Enter (or choose **Generate report**).
 3. Check the displayed battery health. The report is kept locally and is not uploaded yet.
 4. Remove the battery, scan or enter its serial number, and choose **Upload to RBMS**.
-5. After a successful upload, choose the default or backup printer and print the battery label, or skip printing. If printing fails, you can retry or choose the other printer without uploading again.
+5. After the upload attempt, choose the default or backup printer and print the battery label, or skip printing. If RBMS rejects the report (for example, when health exceeds 100%), the app shows the upload error but still offers to print. Printing still requires retrieving the battery details from RBMS. If printing fails, you can retry or choose the other printer without uploading again.
 6. The app returns to the report-generation step.
 
 The authentication token is held in memory only. Closing the app ends the session.

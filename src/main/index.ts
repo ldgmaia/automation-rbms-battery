@@ -15,6 +15,7 @@ import type {
   BatteryPresence,
   Printer,
   ReportResult,
+  UploadResult,
   UpdateCheckResult,
 } from '../shared/types'
 
@@ -24,7 +25,7 @@ const execFileAsync = promisify(execFile)
 let authToken: string | null = null
 let currentReportPath: string | null = null
 let currentReportHealth: number | null = null
-let uploadedBattery: { serialNumber: string; health: number } | null = null
+let labelBattery: { serialNumber: string; health: number } | null = null
 let updating = false
 
 function portableExecutable(): string | null {
@@ -146,7 +147,7 @@ ipcMain.handle('rbms:generate-report', async (): Promise<ReportResult> => {
 
     await removeCurrentReport()
     currentReportHealth = null
-    uploadedBattery = null
+    labelBattery = null
     reportPath = join(app.getPath('temp'), `rbms-battery-${randomUUID()}.html`)
     const html = await generateReportHtml(reportPath)
     const health = calculateBatteryHealth(parseBatteryReport(html))
@@ -173,8 +174,9 @@ ipcMain.handle('rbms:generate-report', async (): Promise<ReportResult> => {
 
 ipcMain.handle(
   'rbms:upload-report',
-  async (_event, serialInput: string): Promise<OperationResult> => {
-    let result: OperationResult
+  async (_event, serialInput: string): Promise<UploadResult> => {
+    let result: UploadResult
+    labelBattery = null
 
     try {
       if (!authToken) throw new Error('Log in to RBMS before uploading a report.')
@@ -184,6 +186,7 @@ ipcMain.handle(
 
       const serialNumber = extractSerialNumber(serialInput)
       const file = await readFile(currentReportPath)
+      labelBattery = { serialNumber, health: currentReportHealth }
       const form = new FormData()
       form.append('file', new Blob([file], { type: 'text/html' }), basename(currentReportPath))
       form.append('serial_number', serialNumber)
@@ -199,15 +202,14 @@ ipcMain.handle(
       const body = await readResponseBody(response)
 
       if (!response.ok) {
-        result = { ok: false, error: responseError(body, response.status) }
+        result = { ok: false, error: responseError(body, response.status), canPrint: true }
       } else if (isRecord(body) && typeof body.error === 'string') {
-        result = { ok: false, error: body.error }
+        result = { ok: false, error: body.error, canPrint: true }
       } else {
         result = { ok: true, message: 'Battery report saved on RBMS.' }
-        uploadedBattery = { serialNumber, health: currentReportHealth }
       }
     } catch (error) {
-      result = { ok: false, error: errorMessage(error) }
+      result = { ok: false, error: errorMessage(error), canPrint: labelBattery !== null }
     }
 
     try {
@@ -216,7 +218,7 @@ ipcMain.handle(
       const cleanupError = `Temporary report cleanup failed: ${errorMessage(error)}`
       result = result.ok
         ? { ok: true, message: `${result.message} ${cleanupError}` }
-        : { ok: false, error: `${result.error} ${cleanupError}` }
+        : { ...result, error: `${result.error} ${cleanupError}` }
     }
 
     return result
@@ -228,12 +230,12 @@ ipcMain.handle(
   async (_event, printer: Printer): Promise<OperationResult> => {
     try {
       if (!authToken) throw new Error('Log in to RBMS before printing a label.')
-      if (!uploadedBattery) throw new Error('Upload a battery report before printing a label.')
+      if (!labelBattery) throw new Error('Generate a battery report and enter its serial number before printing a label.')
       if (printer !== 'default' && printer !== 'backup') {
         throw new Error('Select a valid printer.')
       }
 
-      const { serialNumber, health } = uploadedBattery
+      const { serialNumber, health } = labelBattery
       let response: Response
       try {
         response = await fetch(`${API_BASE_URL}/inventory_items/showBySerialNumber`, {

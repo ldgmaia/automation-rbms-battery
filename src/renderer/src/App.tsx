@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { BatteryPresence, OperationResult, Printer, ReportResult, UpdateCheckResult } from '../../shared/types'
+import type { BatteryPresence, Printer, ReportResult, UpdateCheckResult, UploadResult } from '../../shared/types'
 
 type Step = 'login' | 'ready' | 'serial' | 'print'
 
@@ -10,6 +10,7 @@ function App() {
   const [password, setPassword] = useState('')
   const [serialNumber, setSerialNumber] = useState('')
   const [batteryHealth, setBatteryHealth] = useState<number | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [printer, setPrinter] = useState<Printer>('default')
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
   const [presence, setPresence] = useState<BatteryPresence | null>(null)
@@ -86,6 +87,7 @@ function App() {
     setBusy(true)
     setNotice(null)
     setBatteryHealth(null)
+    setUploadError(null)
     const result: ReportResult = await window.rbms.generateReport()
     setBusy(false)
 
@@ -103,9 +105,10 @@ function App() {
     if (busy) return
 
     setBusy(true)
-    const result: OperationResult = await window.rbms.uploadReport(serialNumber)
+    const result: UploadResult = await window.rbms.uploadReport(serialNumber)
     setBusy(false)
-    if (result.ok) {
+    if (result.ok || result.canPrint) {
+      setUploadError(result.ok ? null : result.error)
       setStep('print')
     } else {
       setBatteryHealth(null)
@@ -115,7 +118,7 @@ function App() {
     setNotice(
       result.ok
         ? { ok: true, text: result.message ?? 'Battery report saved on RBMS.' }
-        : { ok: false, text: result.error },
+        : { ok: false, text: `Report upload was not confirmed: ${result.error}` },
     )
   }
 
@@ -130,16 +133,23 @@ function App() {
       setBatteryHealth(null)
       setSerialNumber('')
       setStep('ready')
-      setNotice({ ok: true, text: result.message ?? 'Label sent to the printer.' })
+      setNotice(uploadError
+        ? { ok: false, text: `Report upload was not confirmed: ${uploadError} ${result.message ?? 'Label sent to the printer.'}` }
+        : { ok: true, text: result.message ?? 'Label sent to the printer.' })
     } else {
-      setNotice({ ok: false, text: result.error })
+      setNotice({
+        ok: false,
+        text: uploadError ? `Report upload was not confirmed: ${uploadError} Printing failed: ${result.error}` : result.error,
+      })
     }
   }
 
   function skipPrinting() {
     setBatteryHealth(null)
     setSerialNumber('')
-    setNotice({ ok: true, text: 'Battery report saved on RBMS. Label printing skipped.' })
+    setNotice(uploadError
+      ? { ok: false, text: `Report upload was not confirmed: ${uploadError} Label printing skipped.` }
+      : { ok: true, text: 'Battery report saved on RBMS. Label printing skipped.' })
     setStep('ready')
   }
 
@@ -421,7 +431,9 @@ function App() {
               <div className="step-label">Step 3 of 3</div>
               <h2>Print the battery label</h2>
               <p className="prompt">
-                The report was uploaded. Select a printer to print the battery label.
+                {uploadError
+                  ? 'The report upload could not be confirmed. You can still select a printer to print the battery label.'
+                  : 'The report was uploaded. Select a printer to print the battery label.'}
               </p>
               <form onSubmit={handlePrint} className="form-stack">
                 <label>
